@@ -117,28 +117,26 @@ enum QwenImageIO {
     }
     precondition(tensor.ndim == 3 && tensor.dim(0) == 3, "Expected shape [3,H,W]")
 
-    tensor = tensor.asType(.float32)
-    MLX.eval(tensor)
-
-    let data = tensor.asData().data
     let height = tensor.dim(1)
     let width = tensor.dim(2)
     let pixelCount = height * width
 
-    var bytes = [UInt8](repeating: 0, count: pixelCount * 4)
+    let clamped = MLX.clip(tensor, min: 0, max: 1)
+    let scaled = clamped * 255.0
+    let uint8Tensor = scaled.asType(.uint8)
+    MLX.eval(uint8Tensor)
+
+    let data = uint8Tensor.asData().data
+
+    var bytes = [UInt8](repeating: 255, count: pixelCount * 4)
 
     data.withUnsafeBytes { (pointer: UnsafeRawBufferPointer) in
-      let floatPointer = pointer.bindMemory(to: Float.self)
+      let srcPointer = pointer.bindMemory(to: UInt8.self)
       for pixel in 0..<pixelCount {
-        let r = floatPointer[pixel]
-        let g = floatPointer[pixel + pixelCount]
-        let b = floatPointer[pixel + pixelCount * 2]
-
         let dstIndex = pixel * 4
-        bytes[dstIndex] = UInt8(min(max(r, 0), 1) * 255)
-        bytes[dstIndex + 1] = UInt8(min(max(g, 0), 1) * 255)
-        bytes[dstIndex + 2] = UInt8(min(max(b, 0), 1) * 255)
-        bytes[dstIndex + 3] = 255
+        bytes[dstIndex] = srcPointer[pixel]                    
+        bytes[dstIndex + 1] = srcPointer[pixel + pixelCount]   
+        bytes[dstIndex + 2] = srcPointer[pixel + pixelCount * 2] 
       }
     }
 

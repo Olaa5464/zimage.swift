@@ -17,6 +17,7 @@ public struct ZImageGenerationRequest {
   public var seed: UInt64?
   public var outputPath: URL
   public var model: String?
+  public var maxSequenceLength: Int
 
   public init(
     prompt: String,
@@ -27,7 +28,8 @@ public struct ZImageGenerationRequest {
     guidanceScale: Float = ZImageModelMetadata.recommendedGuidanceScale,
     seed: UInt64? = nil,
     outputPath: URL = URL(fileURLWithPath: "z-image.png"),
-    model: String? = nil
+    model: String? = nil,
+    maxSequenceLength: Int = 512
   ) {
     self.prompt = prompt
     self.negativePrompt = negativePrompt
@@ -38,6 +40,7 @@ public struct ZImageGenerationRequest {
     self.seed = seed
     self.outputPath = outputPath
     self.model = model
+    self.maxSequenceLength = maxSequenceLength
   }
 }
 
@@ -104,7 +107,7 @@ public struct ZImagePipeline {
     ))
   }
 
-  private func encodePrompt(_ prompt: String, tokenizer: QwenTokenizer, textEncoder: QwenTextEncoder, maxLength: Int = 2048) throws -> (MLXArray, MLXArray) {
+  private func encodePrompt(_ prompt: String, tokenizer: QwenTokenizer, textEncoder: QwenTextEncoder, maxLength: Int) throws -> (MLXArray, MLXArray) {
     let encoded = try tokenizer.encodeChat(prompts: [prompt], maxLength: maxLength)
     let embeddingsList = textEncoder.encodeForZImage(inputIds: encoded.inputIds, attentionMask: encoded.attentionMask)
 
@@ -130,18 +133,22 @@ public struct ZImagePipeline {
       logger.info("Loading quantized model (bits=\(manifest.bits), group_size=\(manifest.groupSize))")
     }
 
-    // Phase 1: Load text encoder and encode prompts
     let promptEmbeds: MLXArray
-    let negativeEmbeds: MLXArray
+    let negativeEmbeds: MLXArray?
+    let doCFG = request.guidanceScale > 1.0
 
     let usePythonEmbeds = ProcessInfo.processInfo.environment["USE_PYTHON_EMBEDS"] != nil
     if usePythonEmbeds {
       var pe = try loadNumpyArray(from: "/tmp/python_prompt_embeds.npy")
-      var ne = try loadNumpyArray(from: "/tmp/python_negative_embeds.npy")
       if pe.ndim == 2 { pe = pe.expandedDimensions(axis: 0) }
-      if ne.ndim == 2 { ne = ne.expandedDimensions(axis: 0) }
       promptEmbeds = pe
-      negativeEmbeds = ne
+      if doCFG {
+        var ne = try loadNumpyArray(from: "/tmp/python_negative_embeds.npy")
+        if ne.ndim == 2 { ne = ne.expandedDimensions(axis: 0) }
+        negativeEmbeds = ne
+      } else {
+        negativeEmbeds = nil
+      }
     } else {
       logger.info("Loading text encoder...")
       let tokenizer = try loadTokenizer(snapshot: snapshot)
@@ -149,17 +156,21 @@ public struct ZImagePipeline {
       let textEncoderWeights = try weightsMapper.loadTextEncoder()
       ZImageWeightsMapping.applyTextEncoder(weights: textEncoderWeights, to: textEncoder, manifest: quantManifest, logger: logger)
 
-      let (pe, _) = try encodePrompt(request.prompt, tokenizer: tokenizer, textEncoder: textEncoder)
-      let (ne, _) = try encodePrompt(request.negativePrompt ?? "", tokenizer: tokenizer, textEncoder: textEncoder)
+      let (pe, _) = try encodePrompt(request.prompt, tokenizer: tokenizer, textEncoder: textEncoder, maxLength: request.maxSequenceLength)
       promptEmbeds = pe
-      negativeEmbeds = ne
 
-      MLX.eval(promptEmbeds, negativeEmbeds)
+      if doCFG {
+        let (ne, _) = try encodePrompt(request.negativePrompt ?? "", tokenizer: tokenizer, textEncoder: textEncoder, maxLength: request.maxSequenceLength)
+        negativeEmbeds = ne
+        MLX.eval(promptEmbeds, ne)
+      } else {
+        negativeEmbeds = nil
+        MLX.eval(promptEmbeds)
+      }
       logger.info("Text encoding complete, clearing text encoder from memory")
     }
     GPU.clearCache()
 
-    // Phase 2: Load transformer and run denoising loop
     logger.info("Loading transformer...")
     let transformer = try loadTransformer(snapshot: snapshot, config: modelConfigs.transformer)
     let transformerWeights = try weightsMapper.loadTransformer()
@@ -193,7 +204,6 @@ public struct ZImagePipeline {
     )
 
     let timestepsArray = scheduler.timesteps.asArray(Float.self)
-    let doCFG = request.guidanceScale > 1.0
 
     logger.info("Running \(request.steps) denoising steps...")
     for stepIndex in 0..<request.steps {
@@ -203,14 +213,14 @@ public struct ZImagePipeline {
 
       var modelLatents = latents
       var embeds = promptEmbeds
-      if doCFG {
+      if doCFG, let ne = negativeEmbeds {
         modelLatents = MLX.concatenated([latents, latents], axis: 0)
-        embeds = MLX.concatenated([promptEmbeds, negativeEmbeds], axis: 0)
+        embeds = MLX.concatenated([promptEmbeds, ne], axis: 0)
       }
 
       let noisePred = transformer.forward(latents: modelLatents, timestep: timestepArray, promptEmbeds: embeds)
       var guidedNoise: MLXArray
-      if doCFG {
+      if doCFG, negativeEmbeds != nil {
         let batch = latents.dim(0)
         let positive = noisePred[0 ..< batch, 0..., 0..., 0...]
         let negative = noisePred[batch ..< batch * 2, 0..., 0..., 0...]
@@ -224,7 +234,6 @@ public struct ZImagePipeline {
       MLX.eval(latents)
     }
 
-    // Phase 3: Clear transformer and load VAE for decoding
     logger.info("Denoising complete, loading VAE...")
     GPU.clearCache()
 

@@ -2,6 +2,36 @@ import Foundation
 import MLX
 import MLXNN
 
+private struct TransformerCacheKey: Hashable {
+  let batch: Int
+  let height: Int
+  let width: Int
+  let frames: Int
+  let capOriLen: Int
+}
+
+private struct TransformerCache {
+  let capFreqs: MLXArray
+  let capAttnMask: MLXArray
+  let capPadMask: MLXArray?
+  let capSeqLen: Int
+  let capPad: Int
+
+  let imgFreqs: MLXArray
+  let imgAttnMask: MLXArray
+  let imgPadMask: MLXArray?
+  let imgSeqLen: Int
+  let imgPad: Int
+  let imageTokens: Int
+
+  let unifiedFreqsCis: MLXArray
+  let unifiedAttnMask: MLXArray
+
+  let fTokens: Int
+  let hTokens: Int
+  let wTokens: Int
+}
+
 public final class ZImageTransformer2DModel: Module {
   public let configuration: ZImageTransformerConfig
   @ModuleInfo(key: "t_embedder") var tEmbedder: ZImageTimestepEmbedder
@@ -16,6 +46,10 @@ public final class ZImageTransformer2DModel: Module {
   let ropeEmbedder: ZImageRopeEmbedder
   private var xPadToken: MLXArray?
   private var capPadToken: MLXArray?
+
+  /// Cache for position embeddings and masks (cleared when dimensions change)
+  private var cache: TransformerCache?
+  private var cacheKey: TransformerCacheKey?
 
   public init(configuration: ZImageTransformerConfig) {
     self.configuration = configuration
@@ -148,12 +182,113 @@ public final class ZImageTransformer2DModel: Module {
     }
   }
 
+  public func clearCache() {
+    cache = nil
+    cacheKey = nil
+  }
+
+  private func getOrBuildCache(
+    batch: Int,
+    height: Int,
+    width: Int,
+    frames: Int,
+    capOriLen: Int,
+    patchSize: Int,
+    fPatchSize: Int
+  ) -> TransformerCache {
+    let seqMultiOf = 32
+    let key = TransformerCacheKey(
+      batch: batch,
+      height: height,
+      width: width,
+      frames: frames,
+      capOriLen: capOriLen
+    )
+
+    if let existingKey = cacheKey, let existingCache = cache, existingKey == key {
+      return existingCache
+    }
+
+    let capPad = (seqMultiOf - (capOriLen % seqMultiOf)) % seqMultiOf
+    let capSeqLen = capOriLen + capPad
+
+    let capPosIds = ZImageCoordinateUtils.createCoordinateGrid(
+      size: (capSeqLen, 1, 1),
+      start: (1, 0, 0)
+    ).reshaped(capSeqLen, 3)
+    let capFreqs = ropeEmbedder(ids: capPosIds)
+    let capAttnMask = MLX.ones([batch, capSeqLen], dtype: .bool)
+
+    var capPadMask: MLXArray? = nil
+    if capPad > 0 {
+      let capPadMask1d = MLX.concatenated([
+        MLX.zeros([capOriLen], dtype: .bool),
+        MLX.ones([capPad], dtype: .bool)
+      ], axis: 0)
+      capPadMask = MLX.broadcast(capPadMask1d.reshaped(1, capSeqLen), to: [batch, capSeqLen])
+    }
+
+    let fTokens = frames / fPatchSize
+    let hTokens = height / patchSize
+    let wTokens = width / patchSize
+    let imageTokens = fTokens * hTokens * wTokens
+    let imgPad = (seqMultiOf - (imageTokens % seqMultiOf)) % seqMultiOf
+    let imgSeqLen = imageTokens + imgPad
+
+    let imgPos = ZImageCoordinateUtils.createCoordinateGrid(
+      size: (fTokens, hTokens, wTokens),
+      start: (capSeqLen + 1, 0, 0)
+    ).reshaped(imageTokens, 3)
+    let imgPadPos = ZImageCoordinateUtils.createCoordinateGrid(
+      size: (imgPad, 1, 1),
+      start: (0, 0, 0)
+    ).reshaped(imgPad, 3)
+    let imgPosIds = MLX.concatenated([imgPos, imgPadPos], axis: 0)
+    let imgFreqs = ropeEmbedder(ids: imgPosIds)
+    let imgAttnMask = MLX.ones([batch, imgSeqLen], dtype: .bool)
+
+    var imgPadMask: MLXArray? = nil
+    if imgPad > 0 {
+      let imgPadMask1d = MLX.concatenated([
+        MLX.zeros([imageTokens], dtype: .bool),
+        MLX.ones([imgPad], dtype: .bool)
+      ], axis: 0)
+      imgPadMask = MLX.broadcast(imgPadMask1d.reshaped(1, imgSeqLen), to: [batch, imgSeqLen])
+    }
+
+    let unifiedFreqsCis = MLX.concatenated([imgFreqs, capFreqs], axis: 0)
+    let unifiedAttnMask = MLX.concatenated([imgAttnMask, capAttnMask], axis: 1)
+
+    let newCache = TransformerCache(
+      capFreqs: capFreqs,
+      capAttnMask: capAttnMask,
+      capPadMask: capPadMask,
+      capSeqLen: capSeqLen,
+      capPad: capPad,
+      imgFreqs: imgFreqs,
+      imgAttnMask: imgAttnMask,
+      imgPadMask: imgPadMask,
+      imgSeqLen: imgSeqLen,
+      imgPad: imgPad,
+      imageTokens: imageTokens,
+      unifiedFreqsCis: unifiedFreqsCis,
+      unifiedAttnMask: unifiedAttnMask,
+      fTokens: fTokens,
+      hTokens: hTokens,
+      wTokens: wTokens
+    )
+
+    self.cache = newCache
+    self.cacheKey = key
+
+    return newCache
+  }
+
   public func forward(
     latents: MLXArray,
     timestep: MLXArray,
     promptEmbeds: MLXArray
   ) -> MLXArray {
-    let seqMultiOf = 32
     let hasFrameDim = latents.ndim == 5
     let batch = latents.dim(0)
     let channels = latents.dim(1)
@@ -168,6 +303,17 @@ public final class ZImageTransformer2DModel: Module {
       return MLX.zeros(latents.shape, dtype: latents.dtype)
     }
 
+    let capOriLen = promptEmbeds.dim(1)
+    let cached = getOrBuildCache(
+      batch: batch,
+      height: height,
+      width: width,
+      frames: frames,
+      capOriLen: capOriLen,
+      patchSize: patchSize,
+      fPatchSize: fPatchSize
+    )
+
     var latentsWithFrame = latents
     if !hasFrameDim {
       latentsWithFrame = MLX.expandedDimensions(latents, axis: 2)
@@ -176,85 +322,46 @@ public final class ZImageTransformer2DModel: Module {
     let tScaled = timestep * MLXArray(configuration.tScale)
     var tEmb = tEmbedder(tScaled)
 
-    let capOriLen = promptEmbeds.dim(1)
-    let capPad = (seqMultiOf - (capOriLen % seqMultiOf)) % seqMultiOf
-    let capSeqLen = capOriLen + capPad
-
     var capFeat = promptEmbeds
-    if capPad > 0 {
+    if cached.capPad > 0 {
       let last = promptEmbeds[0..., capOriLen - 1, 0...]
-      let pad = MLX.broadcast(last, to: [batch, capPad, promptEmbeds.dim(2)])
+      let pad = MLX.broadcast(last, to: [batch, cached.capPad, promptEmbeds.dim(2)])
       capFeat = MLX.concatenated([promptEmbeds, pad], axis: 1)
     }
     capFeat = capEmbedLinear(capEmbedNorm(capFeat))
-    let capPadMask1d = MLX.concatenated([
-      MLX.zeros([capOriLen], dtype: .bool),
-      MLX.ones([capPad], dtype: .bool)
-    ], axis: 0)
-    let capPadMask = MLX.broadcast(capPadMask1d.reshaped(1, capSeqLen), to: [batch, capSeqLen])
-    if let capPadToken {
+
+    if let capPadToken, let capPadMask = cached.capPadMask {
       let padDim = capPadToken.dim(capPadToken.ndim - 1)
-      let pad = MLX.broadcast(capPadToken.reshaped(1, 1, padDim), to: [batch, capSeqLen, padDim])
+      let pad = MLX.broadcast(capPadToken.reshaped(1, 1, padDim), to: [batch, cached.capSeqLen, padDim])
       capFeat = MLX.where(MLX.expandedDimensions(capPadMask, axis: 2), pad, capFeat)
     }
 
-    let capPosIds = ZImageCoordinateUtils.createCoordinateGrid(
-      size: (capSeqLen, 1, 1),
-      start: (1, 0, 0)
-    ).reshaped(capSeqLen, 3)
-    let capFreqs = ropeEmbedder(ids: capPosIds)
-    let capAttnMask = MLX.ones([batch, capSeqLen], dtype: .bool)
-
-    let fTokens = frames / fPatchSize
-    let hTokens = height / patchSize
-    let wTokens = width / patchSize
-    let imageTokens = fTokens * hTokens * wTokens
-    let imgPad = (seqMultiOf - (imageTokens % seqMultiOf)) % seqMultiOf
-    let imgSeqLen = imageTokens + imgPad
-
     var image = latentsWithFrame
-      .reshaped(batch, channels, fTokens, fPatchSize, hTokens, patchSize, wTokens, patchSize)
+      .reshaped(batch, channels, cached.fTokens, fPatchSize, cached.hTokens, patchSize, cached.wTokens, patchSize)
       .transposed(0, 2, 4, 6, 3, 5, 7, 1)
-      .reshaped(batch, imageTokens, patchSize * patchSize * fPatchSize * channels)
+      .reshaped(batch, cached.imageTokens, patchSize * patchSize * fPatchSize * channels)
 
-    if imgPad > 0 {
-      let last = image[0..., imageTokens - 1, 0...]
-      let pad = MLX.broadcast(last, to: [batch, imgPad, image.dim(2)])
+    if cached.imgPad > 0 {
+      let last = image[0..., cached.imageTokens - 1, 0...]
+      let pad = MLX.broadcast(last, to: [batch, cached.imgPad, image.dim(2)])
       image = MLX.concatenated([image, pad], axis: 1)
     }
 
     image = xEmbed(image)
     tEmb = tEmb.asType(image.dtype)
 
-    let imgPadMask1d = MLX.concatenated([
-      MLX.zeros([imageTokens], dtype: .bool),
-      MLX.ones([imgPad], dtype: .bool)
-    ], axis: 0)
-    let imgPadMask = MLX.broadcast(imgPadMask1d.reshaped(1, imgSeqLen), to: [batch, imgSeqLen])
-    if let xPadToken {
+    if let xPadToken, let imgPadMask = cached.imgPadMask {
       let padDim = xPadToken.dim(xPadToken.ndim - 1)
-      let pad = MLX.broadcast(xPadToken.reshaped(1, 1, padDim), to: [batch, imgSeqLen, padDim])
+      let pad = MLX.broadcast(xPadToken.reshaped(1, 1, padDim), to: [batch, cached.imgSeqLen, padDim])
       image = MLX.where(MLX.expandedDimensions(imgPadMask, axis: 2), pad, image)
     }
-
-    let imgPos = ZImageCoordinateUtils.createCoordinateGrid(
-      size: (fTokens, hTokens, wTokens),
-      start: (capSeqLen + 1, 0, 0)
-    ).reshaped(imageTokens, 3)
-    let imgPadPos = ZImageCoordinateUtils.createCoordinateGrid(
-      size: (imgPad, 1, 1),
-      start: (0, 0, 0)
-    ).reshaped(imgPad, 3)
-    let imgPosIds = MLX.concatenated([imgPos, imgPadPos], axis: 0)
-    let imgFreqs = ropeEmbedder(ids: imgPosIds)
-    let imgAttnMask = MLX.ones([batch, imgSeqLen], dtype: .bool)
 
     var noiseStream = image
     for block in noiseRefiner {
       noiseStream = block(
         noiseStream,
-        attnMask: imgAttnMask,
-        freqsCis: imgFreqs,
+        attnMask: cached.imgAttnMask,
+        freqsCis: cached.imgFreqs,
         adalnInput: tEmb
       )
     }
@@ -263,28 +370,26 @@ public final class ZImageTransformer2DModel: Module {
     for block in contextRefiner {
       capStream = block(
         capStream,
-        attnMask: capAttnMask,
-        freqsCis: capFreqs,
+        attnMask: cached.capAttnMask,
+        freqsCis: cached.capFreqs,
         adalnInput: nil
       )
     }
 
-    let unifiedFreqsCis = MLX.concatenated([imgFreqs, capFreqs], axis: 0)
     var unified = MLX.concatenated([noiseStream, capStream], axis: 1)
-    let unifiedAttnMask = MLX.concatenated([imgAttnMask, capAttnMask], axis: 1)
 
     for block in layers {
-      unified = block(unified, attnMask: unifiedAttnMask, freqsCis: unifiedFreqsCis, adalnInput: tEmb)
+      unified = block(unified, attnMask: cached.unifiedAttnMask, freqsCis: cached.unifiedFreqsCis, adalnInput: tEmb)
     }
 
-    let imageOut = unified[0..., 0..<imageTokens, 0...]
+    let imageOut = unified[0..., 0..<cached.imageTokens, 0...]
     let projected = finalLayer(imageOut, conditioning: tEmb)
     let outChannels = configuration.inChannels
 
     var reshaped = projected
-      .reshaped(batch, fTokens, hTokens, wTokens, fPatchSize, patchSize, patchSize, outChannels)
+      .reshaped(batch, cached.fTokens, cached.hTokens, cached.wTokens, fPatchSize, patchSize, patchSize, outChannels)
       .transposed(0, 7, 1, 4, 2, 5, 3, 6)
-      .reshaped(batch, outChannels, fTokens * fPatchSize, hTokens * patchSize, wTokens * patchSize)
+      .reshaped(batch, outChannels, cached.fTokens * fPatchSize, cached.hTokens * patchSize, cached.wTokens * patchSize)
 
     reshaped = reshaped[0..., 0..., 0, 0..., 0...]
     return reshaped

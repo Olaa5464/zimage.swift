@@ -35,6 +35,7 @@ struct ZImageCLI {
     var outputPath = "z-image.png"
     var model: String?
     var cacheLimit: Int?
+    var maxSequenceLength = 512
 
     let args = Array(CommandLine.arguments.dropFirst())
     var iterator = args.makeIterator()
@@ -61,6 +62,8 @@ struct ZImageCLI {
         model = nextValue(for: arg, iterator: &iterator)
       case "--cache-limit":
         cacheLimit = intValue(for: arg, iterator: &iterator, minimum: 1, fallback: 2048)
+      case "--max-sequence-length":
+        maxSequenceLength = intValue(for: arg, iterator: &iterator, minimum: 64, fallback: 512)
       case "--help", "-h":
         printUsage()
         return
@@ -91,7 +94,8 @@ struct ZImageCLI {
       guidanceScale: guidance,
       seed: seed,
       outputPath: URL(fileURLWithPath: outputPath),
-      model: model
+      model: model,
+      maxSequenceLength: maxSequenceLength
     )
 
     let pipeline = ZImagePipeline(logger: logger)
@@ -122,6 +126,7 @@ struct ZImageCLI {
       --output, -o           Output path (default z-image.png)
       --model, -m            Model path or HuggingFace ID (default: \(ZImageRepository.id))
       --cache-limit          GPU memory cache limit in MB (default: unlimited)
+      --max-sequence-length  Maximum sequence length for text encoding (default: 512)
       --help, -h             Show help
 
     Subcommands:

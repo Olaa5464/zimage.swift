@@ -133,42 +133,26 @@ public struct ZImagePipeline {
       logger.info("Loading quantized model (bits=\(manifest.bits), group_size=\(manifest.groupSize))")
     }
 
-    let promptEmbeds: MLXArray
-    let negativeEmbeds: MLXArray?
     let doCFG = request.guidanceScale > 1.0
 
-    let usePythonEmbeds = ProcessInfo.processInfo.environment["USE_PYTHON_EMBEDS"] != nil
-    if usePythonEmbeds {
-      var pe = try loadNumpyArray(from: "/tmp/python_prompt_embeds.npy")
-      if pe.ndim == 2 { pe = pe.expandedDimensions(axis: 0) }
-      promptEmbeds = pe
-      if doCFG {
-        var ne = try loadNumpyArray(from: "/tmp/python_negative_embeds.npy")
-        if ne.ndim == 2 { ne = ne.expandedDimensions(axis: 0) }
-        negativeEmbeds = ne
-      } else {
-        negativeEmbeds = nil
-      }
+    logger.info("Loading text encoder...")
+    let tokenizer = try loadTokenizer(snapshot: snapshot)
+    let textEncoder = try loadTextEncoder(snapshot: snapshot, config: modelConfigs.textEncoder)
+    let textEncoderWeights = try weightsMapper.loadTextEncoder()
+    ZImageWeightsMapping.applyTextEncoder(weights: textEncoderWeights, to: textEncoder, manifest: quantManifest, logger: logger)
+
+    let (promptEmbeds, _) = try encodePrompt(request.prompt, tokenizer: tokenizer, textEncoder: textEncoder, maxLength: request.maxSequenceLength)
+
+    let negativeEmbeds: MLXArray?
+    if doCFG {
+      let (ne, _) = try encodePrompt(request.negativePrompt ?? "", tokenizer: tokenizer, textEncoder: textEncoder, maxLength: request.maxSequenceLength)
+      negativeEmbeds = ne
+      MLX.eval(promptEmbeds, ne)
     } else {
-      logger.info("Loading text encoder...")
-      let tokenizer = try loadTokenizer(snapshot: snapshot)
-      let textEncoder = try loadTextEncoder(snapshot: snapshot, config: modelConfigs.textEncoder)
-      let textEncoderWeights = try weightsMapper.loadTextEncoder()
-      ZImageWeightsMapping.applyTextEncoder(weights: textEncoderWeights, to: textEncoder, manifest: quantManifest, logger: logger)
-
-      let (pe, _) = try encodePrompt(request.prompt, tokenizer: tokenizer, textEncoder: textEncoder, maxLength: request.maxSequenceLength)
-      promptEmbeds = pe
-
-      if doCFG {
-        let (ne, _) = try encodePrompt(request.negativePrompt ?? "", tokenizer: tokenizer, textEncoder: textEncoder, maxLength: request.maxSequenceLength)
-        negativeEmbeds = ne
-        MLX.eval(promptEmbeds, ne)
-      } else {
-        negativeEmbeds = nil
-        MLX.eval(promptEmbeds)
-      }
-      logger.info("Text encoding complete, clearing text encoder from memory")
+      negativeEmbeds = nil
+      MLX.eval(promptEmbeds)
     }
+    logger.info("Text encoding complete, clearing text encoder from memory")
     GPU.clearCache()
 
     logger.info("Loading transformer...")
@@ -181,13 +165,8 @@ public struct ZImagePipeline {
     let latentW = max(1, request.width / vaeDivisor)
     let shape: [Int] = [1, ZImageModelMetadata.Transformer.inChannels, latentH, latentW]
 
-    var latents: MLXArray
-    if usePythonEmbeds, FileManager.default.fileExists(atPath: "/tmp/python_initial_latents.npy") {
-      latents = try loadNumpyArray(from: "/tmp/python_initial_latents.npy")
-    } else {
-      let randomKey: RandomStateOrKey? = request.seed.map { MLXRandom.key($0) }
-      latents = MLXRandom.normal(shape, loc: 0, scale: 1, key: randomKey)
-    }
+    let randomKey: RandomStateOrKey? = request.seed.map { MLXRandom.key($0) }
+    var latents = MLXRandom.normal(shape, loc: 0, scale: 1, key: randomKey)
 
     let mu = calculateShift(
       imageSeqLen: latentH * latentW,
@@ -283,48 +262,6 @@ public struct ZImagePipeline {
 
     logger.info("Using model at \(resolvedURL.path)")
     return resolvedURL
-  }
-
-  private func loadNumpyArray(from path: String) throws -> MLXArray {
-    let url = URL(fileURLWithPath: path)
-    let data = try Data(contentsOf: url)
-
-    guard data.count > 10 else {
-      throw PipelineError.weightsMissing("Invalid numpy file: \(path)")
-    }
-
-    let headerLen = Int(data[8]) | (Int(data[9]) << 8)
-    let headerStart = 10
-    let headerEnd = headerStart + headerLen
-
-    let headerData = data[headerStart..<headerEnd]
-    let headerStr = String(data: headerData, encoding: .ascii) ?? ""
-
-    var shape: [Int] = []
-    if let shapeStart = headerStr.range(of: "'shape': ("),
-       let shapeEnd = headerStr.range(of: ")", range: shapeStart.upperBound..<headerStr.endIndex) {
-      let shapeStr = String(headerStr[shapeStart.upperBound..<shapeEnd.lowerBound])
-      shape = shapeStr.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
-    }
-
-    let dataStart = headerEnd
-    let floatCount = (data.count - dataStart) / 4
-
-    var floats = [Float](repeating: 0, count: floatCount)
-    data.withUnsafeBytes { ptr in
-      let floatPtr = ptr.baseAddress!.advanced(by: dataStart).assumingMemoryBound(to: Float.self)
-      for i in 0..<floatCount {
-        floats[i] = floatPtr[i]
-      }
-    }
-
-    if shape.isEmpty {
-      let hiddenDim = 2560
-      let seqLen = floatCount / hiddenDim
-      shape = [seqLen, hiddenDim]
-    }
-
-    return MLXArray(floats, shape)
   }
 
   private func calculateShift(

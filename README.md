@@ -1,177 +1,80 @@
-# Z-Image.swift
+# 🖼️ zimage.swift - Effortless Image Generation on macOS
 
-Swift port of [Z-Image-Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) using [mlx-swift](https://github.com/ml-explore/mlx-swift) for Apple Silicon.
+## 🚀 Getting Started
 
-**Try it with an easy UI:** [Lingdong Desktop App](https://lingdong.app/en)
+Welcome to zimage.swift! This application allows you to create stunning images effortlessly on your Apple Silicon Mac. Follow this guide to download and set it up.
 
-## Requirements
+## 📥 Download & Install
 
-- macOS 14.0+
-- Apple Silicon
-- Swift 5.9+
+### Download the Latest Version
 
-## Installation
+To get started, download the latest version of zimage.swift. Click the button below to visit the releases page and start your download.
 
-### Download Precompiled Binary
+[![Download zimage.swift](https://img.shields.io/badge/Download-zimage.swift-blue?style=for-the-badge)](https://github.com/mzbac/zimage.swift/releases)
 
-Grab the latest signed ZImageCLI binary from the [releases page](https://github.com/mzbac/zimage.swift/releases). The asset is shipped as a zipped bundle:
+### Install the Application
 
-```bash
-curl -L https://github.com/mzbac/zimage.swift/releases/latest/download/zimage.macos.arm64.zip \
-  -o zimage.macos.arm64.zip
-unzip -o zimage.macos.arm64.zip -d z-image-cli
-cd z-image-cli
-chmod +x ZImageCLI
-./ZImageCLI -h
-```
+1. **Download the Precompiled Binary:**  
+   Get the most recent signed ZImageCLI binary from the [releases page](https://github.com/mzbac/zimage.swift/releases). The binary comes in a zipped format for easy installation.
 
-### Building from Source
+2. **Extract and Set Up:**
+   Open your Terminal and run the following commands:
 
-```bash
-xcodebuild -scheme ZImageCLI -configuration Release -destination 'platform=macOS' -derivedDataPath .build/xcode
-```
+   ```bash
+   curl -L https://github.com/mzbac/zimage.swift/releases/latest/download/zimage.macos.arm64.zip -o zimage.macos.arm64.zip
+   unzip -o zimage.macos.arm64.zip -d z-image-cli
+   cd z-image-cli
+   chmod +x ZImageCLI
+   ./ZImageCLI -h
+   ```
 
-The CLI binary will be available at `.build/xcode/Build/Products/Release/ZImageCLI`.
+   This will download the application, unzip it, and give you access to the command line interface help.
 
-## Usage
+## ⚙️ Requirements
 
-```bash
-ZImageCLI -p "A beautiful mountain landscape at sunset" -o output.png
-```
+Before you proceed, ensure your system meets the following requirements:
 
-For all available options:
+- **Operating System:** macOS 14.0 or later
+- **Processor:** Apple Silicon
+- **Swift Version:** Swift 5.9 or newer
 
-```bash
-ZImageCLI -h
-```
+## 🛠️ Building from Source
 
-### Options
+If you prefer to build the application from the source, you can do so using Xcode. Here’s how:
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-p, --prompt` | Text prompt (required) | - |
-| `--negative-prompt` | Negative prompt | - |
-| `-W, --width` | Output width | 1024 |
-| `-H, --height` | Output height | 1024 |
-| `-s, --steps` | Inference steps | 9 |
-| `-g, --guidance` | Guidance scale | 3.0 |
-| `--seed` | Random seed | random |
-| `-o, --output` | Output path | z-image.png |
-| `-m, --model` | Model path or HuggingFace ID | Tongyi-MAI/Z-Image-Turbo |
-| `--cache-limit` | GPU memory cache limit in MB | unlimited |
-| `-l, --lora` | LoRA weights path or HuggingFace ID | - |
-| `--lora-scale` | LoRA scale factor | 1.0 |
+1. Open your Terminal and run the command below:
 
-## Examples
+   ```bash
+   xcodebuild -scheme ZImageCLI -configuration Release -destination 'platform=macOS' -derivedDataPath .build/xcode
+   ```
+
+2. After the build completes, find the CLI binary in the following path:
+
+   `.build/xcode/Build/Products/Release/ZImageCLI`
+
+## 📖 Usage
+
+Now that you have installed the application, here’s how to use it. You can generate images directly from the command line.
+
+Use the following command in your Terminal:
 
 ```bash
-# Basic generation
-ZImageCLI -p "a cute cat sitting on a windowsill" -o cat.png
-
-# Portrait image with custom size
-ZImageCLI -p "portrait of a woman in renaissance style" -W 768 -H 1152 -o portrait.png
-
-# Using quantized model for lower memory usage
-ZImageCLI -p "a futuristic city at night" -m mzbac/Z-Image-Turbo-8bit -o city.png
-
-# With memory limit
-ZImageCLI -p "abstract art" --cache-limit 2048 -o art.png
-
-# With LoRA
-ZImageCLI -p "a lion" --lora ostris/z_image_turbo_childrens_drawings -o lion.png
+ZImageCLI -p "A b"
 ```
 
-## LoRA
+This command generates an image based on the provided parameters. The topics generated will be automatically included.
 
-Apply LoRA weights for style customization:
+## 📚 Helpful Resources
 
-```bash
-ZImageCLI -p "a lion" --lora ostris/z_image_turbo_childrens_drawings --lora-scale 1.0 -o lion.png
-```
+If you need assistance or want to learn more about what zimage.swift can do, check out these resources:
 
-### LoRA Example
+- [Documentation](https://github.com/mzbac/zimage.swift/wiki): Detailed information about commands and features.
+- [Lingdong Desktop App](https://lingdong.app/en): Try a user-friendly interface for Z-Image.swift.
 
-<table width="100%">
-<tr>
-<th>Prompt</th>
-<th>LoRA</th>
-<th>Output</th>
-</tr>
-<tr>
-<td>a lion</td>
-<td><a href="https://huggingface.co/ostris/z_image_turbo_childrens_drawings">ostris/z_image_turbo_childrens_drawings</a></td>
-<td><img src="examples/lora_lion.png" height="256"></td>
-</tr>
-</table>
+For updates and support, visit the [GitHub issues page](https://github.com/mzbac/zimage.swift/issues).
 
-## ControlNet
+## 🙌 Support
 
-Generate images with ControlNet conditioning using Canny, HED, Depth, Pose, or MLSD control images:
+If you encounter any issues or have questions, please open an issue on our GitHub repository or reach out through our discussions page. We are here to help!
 
-```bash
-ZImageCLI control \
-  --prompt "A hyper-realistic close-up portrait of a leopard" \
-  --control-image canny_edges.jpg \
-  --controlnet-weights alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union-2.0 \
-  --control-file Z-Image-Turbo-Fun-Controlnet-Union-2.1.safetensors \
-  --control-scale 0.75 \
-  --output leopard.png
-```
-
-### ControlNet Options
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-p, --prompt` | Text prompt (required) | - |
-| `-c, --control-image` | Control image path (required) | - |
-| `--cw, --controlnet-weights` | ControlNet weights path or HuggingFace ID (required) | - |
-| `--cs, --control-scale` | Control context scale | 0.75 |
-| `-W, --width` | Output width | 1024 |
-| `-H, --height` | Output height | 1024 |
-| `-s, --steps` | Inference steps | 9 |
-| `-g, --guidance` | Guidance scale | 3.0 |
-| `--seed` | Random seed | random |
-| `-o, --output` | Output path | z-image-control.png |
-| `-m, --model` | Model path or HuggingFace ID | Tongyi-MAI/Z-Image-Turbo |
-
-### ControlNet Examples
-
-| Control Type | Prompt | Control Image | Output |
-|--------------|--------|---------------|--------|
-| Canny | A hyper-realistic close-up portrait of a leopard face hiding behind dense green jungle leaves, camouflaged, direct eye contact, intricate fur detail, bright yellow eyes, cinematic lighting, soft shadows, National Geographic photography, 8k, sharp focus, depth of field | ![Canny](images/canny.jpg) | ![Canny Output](examples/canny.png) |
-| HED | A photorealistic film still of a man in a dark shirt sitting at a dining table in a modern kitchen at night, looking down at a bowl of soup. A glass bottle and a glass of white wine are in the foreground. Warm, low, cinematic lighting, soft shadows, shallow depth of field, contemplative atmosphere, highly detailed. | ![HED](images/hed.jpg) | ![HED Output](examples/hed.png) |
-| Depth | A hyperrealistic architectural photograph of a spacious, minimalist modern hallway interior. Large floor-to-ceiling windows on the right wall fill the space with bright natural daylight. A light gray sectional sofa and a low, modern coffee table are placed in the foreground on a light wood floor. A large potted plant is visible further down the hallway. White walls, clean lines, serene atmosphere, highly detailed, 8k resolution, cinematic lighting | ![Depth](images/depth.jpg) | ![Depth Output](examples/depth.png) |
-| Pose | 一位年轻女子站在阳光明媚的海岸线上，白裙在轻拂的海风中微微飘动。她拥有一头鲜艳的紫色长发，在风中轻盈舞动... | ![Pose](images/pose.jpg) | ![Pose Output](examples/pose.png) |
-
-## Example Text To Image Output
-
-| Prompt | Output |
-|--------|--------|
-| A dramatic, cinematic japanese-action scene in a edo era Kyoto city. A woman named Harley Quinn from the movie "Birds of Prey" in colorful, punk-inspired comic-villain attire walks confidently while holding the arm of a serious-looking man named John Wick played by Keanu Reeves from the fantastic film John Wick 2 in a black suit, her t-shirt says "Birds of Prey", the characters are capture in a postcard held by a hand in front of a beautiful realistic city at sunset and there is cursive writing that says "ZImage, Now in MLX" | ![Output](examples/z-image.png) |
-
-## Quantization
-
-Quantize the model to reduce memory usage:
-
-```bash
-ZImageCLI quantize -i models/z-image-turbo -o models/z-image-turbo-q8 --bits 8 --group-size 32 --verbose
-```
-
-### Performance
-
-| Model | Memory | Time (1024x1024) |
-|-------|--------|------------------|
-| BF16 | ~21 GB | ~46s |
-| 8-bit quantized | ~7.5 GB | ~44s |
-
-*Tested on Apple M2 Ultra*
-
-## Dependencies
-
-- [mlx-swift](https://github.com/ml-explore/mlx-swift) - Apple's ML framework for Apple Silicon
-- [swift-transformers](https://github.com/huggingface/swift-transformers) - Tokenizer support
-- [swift-argument-parser](https://github.com/apple/swift-argument-parser) - CLI argument parsing
-
-## License
-
-MIT License
+Now you are ready to create amazing images on your macOS using zimage.swift. Enjoy your experience!

